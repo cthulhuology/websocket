@@ -107,13 +107,12 @@ body(Data) ->
 %% upgrade a HTTP connection to a WebSocket
 upgrade(Socket,Data,Module,Function) ->
 	Headers = headers(Data),
-	UUID = websocket:id(),
 	{ ok, WebSocket } = case proplists:get_value(<<"Sec-WebSocket-Version">>,Headers) of
 		<<"13">> -> 
-			websocket:start(UUID,websocket_rfc6455, Module, Function, Socket, Headers,[]);
+			websocket:start(websocket_rfc6455, Module, Function, Socket, Headers,[]);
 		_ ->
 			Body = body(Data),
-			websocket:start(UUID,websocket_draft00, Module, Function, Socket, Headers,Body)
+			websocket:start(websocket_draft00, Module, Function, Socket, Headers,Body)
 	end,
 	ok = gen_tcp:controlling_process(Socket,WebSocket).
 

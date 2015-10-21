@@ -4,4 +4,6 @@
 -export([ log/2 ]).
 
 log(Pid,Message) ->
-	io:format("~p got message [~p]~n", [ Pid, Message ]).
+	UUID = websocket:uuid(Pid),
+	Path = websocket:path(Pid),
+	io:format("proc ~p got message [~p] from ~p id: ~p~n", [ Pid, Message, Path, UUID ]).

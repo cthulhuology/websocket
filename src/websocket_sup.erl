@@ -10,7 +10,7 @@ start_link() ->
 init([]) ->
 	{ ok, Configs } = application:get_env(websocket,servers),
 	Servers = [ { list_to_atom("websocket_server_" ++ integer_to_list(Port)),
-			{ websocket_server, start, [ Module, Function, Port ]},
+			{ websocket_server, start_link, [ Module, Function, Port ]},
 			permanent, 5000, worker, [ websocket_server, Module ]} || { Module, Function, Port } <- Configs ],
 	{ok, { {one_for_one, 5, 10}, Servers} }.
 

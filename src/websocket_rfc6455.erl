@@ -3,7 +3,6 @@
 -copyright(<<"© 2012,2013 David J. Goehrig"/utf8>>).
 -export([ handshake/2, frame/1, frame/2, frame/3, unframe/4, handle/4 ]).
 
-
 frame(Data) when is_binary(Data) ->
 	frame(Data,1).	%% 1 == text
 	

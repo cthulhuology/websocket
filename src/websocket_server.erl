@@ -1,6 +1,6 @@
 -module(websocket_server).
 -author({ "David J Goehrig", "dave@dloh.org" }).
--copyright(<<"© 2012,2013,2015 David J Goehrig"/utf8>>).
+-copyright(<<"© 2012,2013,2015,2016 David J Goehrig"/utf8>>).
 -behavior(gen_server).
 -export([ start_link/3, stop/1, listen/1, retry/1, accept/1 ]).
 -export([ init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3 ]).

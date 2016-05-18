@@ -114,7 +114,7 @@ handle_cast( stop, WebSocket ) ->
 handle_cast({ wait_headers, Seen }, WebSocket) ->
 	{ noreply, WebSocket#websocket{ data = Seen, connecting = true }};
 
-handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket }) ->
+handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module = Module, function = Function }) ->
 	%% parse the headers
 	Headers = parse_headers(Data),
 	%% determine which protocol to use, draft00 is now deprecated
@@ -130,6 +130,7 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket }) ->
 	%% send the handshake
 	case gen_tcp:send(Socket,Handshake) of
 		ok -> 
+			spawn(Module,Function,[self(),connected]),
 			{ noreply, WebSocket#websocket{ 
 				protocol = Protocol,
 				headers = Headers, 
@@ -174,8 +175,9 @@ handle_info({ unknown, Any }, WebSocket) ->
 	io:format("Unknown message ~p~n", [ Any ]),
 	{ stop, unknown_message, WebSocket };
 
-handle_info({ close, _Socket }, WebSocket) ->
+handle_info({ close, _Socket }, WebSocket = #websocket{ module = Module, function = Function }) ->
 	%% after a second stop the websocket
+	spawn(Module,Function,[self(), closed]),
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 

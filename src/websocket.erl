@@ -126,6 +126,8 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	end,
 	%% generate the server handshake
 	Handshake = Protocol:handshake(Headers,Data),
+	%% extract the path so we can inform who we are connected to
+	{ path, Path } = lists:keyfind(path,1,Headers),
 	%% find if we have any websocket data already in hand
 	%% send the handshake
 	case gen_tcp:send(Socket,Handshake) of
@@ -175,9 +177,8 @@ handle_info({ unknown, Any }, WebSocket) ->
 	io:format("Unknown message ~p~n", [ Any ]),
 	{ stop, unknown_message, WebSocket };
 
-handle_info({ close, _Socket }, WebSocket = #websocket{ module = Module, function = Function }) ->
+handle_info({ close, _Socket }, WebSocket = #websocket{ }) ->
 	%% after a second stop the websocket
-	spawn(Module,Function,[self(), closed]),
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 
@@ -185,13 +186,15 @@ handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Sock
 	NewData = Protocol:handle(self(),Socket,Message,Data),
 	{ noreply, WebSocket#websocket{ data = NewData }}.
 
-terminate( normal, #websocket{ uuid = UUID, socket = Socket }) ->
+terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
+	spawn(Module,Function,[self(), closed]),
 	gen_tcp:close(Socket),
 	io:format("Closed socket ~p~n", [ UUID ]),
 	ok;
 
-terminate( Reason, #websocket{ uuid = UUID, socket = Socket }) ->
+terminate( Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	io:format("Terminating socket ~p with reason ~p~n", [ UUID, Reason ]),
+	spawn(Module,Function,[self(), closed]),
 	gen_tcp:close(Socket),
 	ok.
 

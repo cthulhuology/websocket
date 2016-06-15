@@ -187,14 +187,14 @@ handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Sock
 	{ noreply, WebSocket#websocket{ data = NewData }}.
 
 terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
-	spawn(Module,Function,[self(), closed]),
+	spawn(Module,Function,[UUID, closed]),
 	gen_tcp:close(Socket),
 	io:format("Closed socket ~p~n", [ UUID ]),
 	ok;
 
 terminate( Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	io:format("Terminating socket ~p with reason ~p~n", [ UUID, Reason ]),
-	spawn(Module,Function,[self(), closed]),
+	spawn(Module,Function,[UUID, closed]),
 	gen_tcp:close(Socket),
 	ok.
 

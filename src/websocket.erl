@@ -10,6 +10,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Public Methods
+%%
 
 %% Starts a websocket by accepting a connection form Listen port
 start(Listen,Module,Function) ->
@@ -68,7 +69,7 @@ init({ Listen, Module, Function }) ->
 			%% if we get a socket, wait for the headers
 			wait_headers(self(), <<"">>),
 			{ ok, #websocket{ 
-				uuid = uuid:new(), 
+				uuid = uuid:id(), 
 				socket = Socket, 
 				headers = [], 
 				data = [],
@@ -175,9 +176,8 @@ handle_info({ unknown, Any }, WebSocket) ->
 	io:format("Unknown message ~p~n", [ Any ]),
 	{ stop, unknown_message, WebSocket };
 
-handle_info({ close, _Socket }, WebSocket = #websocket{ module = Module, function = Function }) ->
+handle_info({ close, _Socket }, WebSocket = #websocket{ }) ->
 	%% after a second stop the websocket
-	spawn(Module,Function,[self(), closed]),
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 
@@ -185,13 +185,15 @@ handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Sock
 	NewData = Protocol:handle(self(),Socket,Message,Data),
 	{ noreply, WebSocket#websocket{ data = NewData }}.
 
-terminate( normal, #websocket{ uuid = UUID, socket = Socket }) ->
+terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
+	spawn(Module,Function,[UUID, closed]),
 	gen_tcp:close(Socket),
 	io:format("Closed socket ~p~n", [ UUID ]),
 	ok;
 
-terminate( Reason, #websocket{ uuid = UUID, socket = Socket }) ->
+terminate( Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	io:format("Terminating socket ~p with reason ~p~n", [ UUID, Reason ]),
+	spawn(Module,Function,[UUID, closed]),
 	gen_tcp:close(Socket),
 	ok.
 

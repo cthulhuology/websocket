@@ -10,6 +10,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Public Methods
+%%
 
 %% Starts a websocket by accepting a connection form Listen port
 start(Listen,Module,Function) ->
@@ -68,7 +69,7 @@ init({ Listen, Module, Function }) ->
 			%% if we get a socket, wait for the headers
 			wait_headers(self(), <<"">>),
 			{ ok, #websocket{ 
-				uuid = uuid:new(), 
+				uuid = uuid:id(), 
 				socket = Socket, 
 				headers = [], 
 				data = [],
@@ -126,8 +127,6 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	end,
 	%% generate the server handshake
 	Handshake = Protocol:handshake(Headers,Data),
-	%% extract the path so we can inform who we are connected to
-	{ path, Path } = lists:keyfind(path,1,Headers),
 	%% find if we have any websocket data already in hand
 	%% send the handshake
 	case gen_tcp:send(Socket,Handshake) of

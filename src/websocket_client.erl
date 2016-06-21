@@ -6,7 +6,7 @@
 -export([ code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
 	terminate/2 ]).
 
--record(websocket_client, {}).
+-record(websocket_client, { socket }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Public API
@@ -24,9 +24,11 @@ stop() ->
 %
 
 init([Url,Module,Function]) ->
-	
-	{ ok, Socket } = gen_tcp:connect(),
-	{ ok, #websocket_client{}}.
+	U = websocket_url:parse(Url),
+	Host = websocket_url:host(U),
+	Port = websocket_url:port(U),	
+	{ ok, Socket } = gen_tcp:connect(Host,Port,[{ active, true }, binary ]),
+	{ ok, #websocket_client{ socket = Socket }}.
 
 handle_call(stop,_From,State) ->
 	{ stop, stopped, State };

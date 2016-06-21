@@ -121,6 +121,7 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	%% determine which protocol to use, draft00 is now deprecated
 	Protocol =  case proplists:get_value(<<"Sec-WebSocket-Version">>,Headers) of
 		<<"13">> -> 
+			io:format("using rfc6455~n"),
 			websocket_rfc6455;
 		_ ->
 			io:format("Protocol not supported")
@@ -157,7 +158,9 @@ handle_info({tcp_closed, Socket }, WebSocket = #websocket{ data = Seen, connecti
 	io:format("Closed socket ~p with data ~p ~n", [ Socket, Seen ]),
 	{ stop, normal, WebSocket };
 
-handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function }) ->	
+handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function, uuid = UUID }) ->	
+	io:format("[websocket] Got message ~p~n", [ Data ]),
+	io:format("invoking ~p:~p for ~p~n", [ Module, Function, UUID ]),
 	spawn(Module,Function,[ self(), Data ] ),
 	{ noreply, WebSocket#websocket{ data = [] }};
 
@@ -182,7 +185,9 @@ handle_info({ close, _Socket }, WebSocket = #websocket{ }) ->
 	{ noreply, WebSocket };
 
 handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Socket, data = Data }) ->
+	io:format("[websocket] message  ~p~n", [ Message ]),
 	NewData = Protocol:handle(self(),Socket,Message,Data),
+	io:format("[websocket] new data ~p~n", [ NewData ]),
 	{ noreply, WebSocket#websocket{ data = NewData }}.
 
 terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->

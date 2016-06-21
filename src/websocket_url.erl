@@ -32,11 +32,11 @@ trunc_question(_) ->
 	<<>>.
 
 split_kvs(Q) ->
-	binary:split(Q,<<$&>>).
+	binary:split(Q,<<$&>>,[global]).
 
 split_kv(Qs) ->
 	lists:map( fun(Q) ->
-		case binary:split(Q,<<$=>>) of
+		case binary:split(Q,<<$=>>,[global]) of
 			[ K, V ] -> { K, V };
 			[ <<>> ] -> {};
 			[ K ] -> { K, K };

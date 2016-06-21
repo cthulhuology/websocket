@@ -13,7 +13,7 @@ frame(Data,Opcode,Masked) when is_binary(Data) ->
 	Len = iolist_size(Data),
 	case Masked of	
 		true -> 
-			Mask = crypo:rand_bytes(4),
+			Mask = crypto:rand_bytes(4),
 			framed(mask(Data,Mask), Opcode, Mask, Len);
 		_ -> 
 			framed(Data, Opcode, Len)
@@ -160,6 +160,7 @@ unframe(Pid,Socket,[],NewData) when byte_size(NewData) > 2 ->
 		unframe(Pid,Socket,{ Finished, Opcode, Length, Mask, [ Payload ], <<>> }, Rest)
 	end;
 unframe(_Pid,_Socket,OldData,<<>>) ->						%% we have no more data, Preserve the previous state...
+	io:format("[unframe] ~p~n", [ OldData ]),
 	OldData;
 unframe(Pid,Socket,OldData,NewData) ->						%% now we've seen some data, but haven't finished processing
 	{ Finished, Opcode, Length, Mask, Payloads, Remainder } = OldData,	%% we may have Payload, Remainder, or Payload&Remainder

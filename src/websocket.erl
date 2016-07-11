@@ -6,7 +6,7 @@
 	wait_headers/2, upgrade/2, bind/3  ]).
 -export([ init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3 ]).
 
--record(websocket, { uuid, protocol, headers, socket, data, module, function, connecting }).
+-record(websocket, { uuid, handler, protocol, headers, socket, data, module, function, connecting }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Public Methods
@@ -135,6 +135,7 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 			spawn(Module,Function,[self(),connected]),
 			{ noreply, WebSocket#websocket{ 
 				protocol = Protocol,
+				handler = Protocol:handler(self(),Socket),
 				headers = Headers, 
 				data = [],
 				connecting = false
@@ -181,6 +182,14 @@ handle_info({ unknown, Any }, WebSocket) ->
 
 handle_info({ close, _Socket }, WebSocket = #websocket{ }) ->
 	%% after a second stop the websocket
+	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
+	{ noreply, WebSocket };
+
+handle_info({tcp, Socket, NewData}, WebSocket = #websocket{ handler = Handler, socket = Socket }) ->
+	Handler ! NewData,
+	{ noreply, WebSocket };
+
+handle_info({tcp_closed, _Socket }, WebSocket) ->
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 

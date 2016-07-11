@@ -1,6 +1,6 @@
 -module(websocket_rfc6455).
 -author({ "David J Goehrig", "dave@dloh.org" }).
--copyright(<<"© 2012,2013 David J. Goehrig"/utf8>>).
+-copyright(<<"© 2012,2013,2016 David J. Goehrig"/utf8>>).
 -export([ handshake/2, frame/1, frame/2, frame/3, unframe/4, handle/4 ]).
 
 frame(Data) when is_binary(Data) ->
@@ -119,33 +119,48 @@ unmask(Data,Mask) when is_binary(Data) ->
 
 %% Peek extracts the header data out of the frame
 peek(<<F:1,_R1:1,_R2:1,_R3:1,Opcode:4,1:1,PayLen:7,Data/binary>>) ->	%% Mask bit set
-	case PayLen of
-		126 -> <<Length:16,Mask:4/binary,Remainder/binary>> = Data;
-		127 -> <<Length:64,Mask:4/binary,Remainder/binary>> = Data;
-		Length -> <<Mask:4/binary,Remainder/binary>> = Data
-	end,
-	{ F, Opcode, Length, Mask, Remainder };
+	{ length, F, Opcode, masked, PayLen, Data };
 peek(<<F:1,_R1:1,_R2:1,_R3:1,Opcode:4,0:1,PayLen:7,Data/binary>>) ->	%% No Mask bit set
-	case PayLen of
-		126 -> <<Length:16,Remainder/binary>> = Data;
-		127 -> <<Length:64,Remainder/binary>> = Data;
-		Length -> <<Remainder/binary>> = Data
-	end,
-	{ F, Opcode, Length, <<"">>, Remainder }.
+	{ length, F, Opcode, unmasked, PayLen, Data }.
 
-%% applies the mask if any
-decode(Data,Length,<<"">>) ->
-	<<Payload:Length/binary,Remainder/binary>> = Data,
-	{ Payload, Remainder };	
-decode(Data,Length,Mask) ->		
-	<<Payload:Length/binary,Remainder/binary>> = Data,
-	{ unmask(Payload,Mask), Remainder }.
+peek({ length, F, Opcode, masked, 126, <<Length:16,Remainder/binary>> = Data) when byte_size(Data) > 1 ->
+	{ unmask, F, Opcode, masked, Length, Remainder };
+
+peek({ length, F, Opcode, masked, 127, <<Length:64,Remainder/binary>> = Data) when byte_size(Data) > 3 ->
+	{ unmask, F, Opcode, Length, Remainder };
+
+peek({ length, F, Opcode, masked, Length, Data }) ->
+	{ unmask, F, Opcode, masked, Length, Data };
+
+peek({ length, F, Opcode, unmasked, 126, <<Length:16,Remainder/binary>> = Data) when byte_size(Data) > 1 ->
+	{ unpack, F, Opcode, unmasked, Length, Data };
+
+peek({ length, F, Opcode, unmasked, 127, <<Length:64,Remainder/binary>> = Data) when byte_size(Data) > 3 ->
+	{ unpack, F, Opcode, unmasked, Length, Data };
+
+peek({ length, F, Opcode, unmasked, Length, Data }) ->
+	{ unpack, F, Opcode, unmasked, Length, Data };
+
+peek({ unmask, F, Opcode, masked, Length, <<Mask:4/binary,Remainder/binary>> = Data) when byte_size(Data) > 3  ->
+	{ unpack, F, Opcode, Mask, Length, Remainder };
+
+peek({ unpack, F, Opcode, unmasked, Length, <<Payload:Length/binary,Remainder/binary>> = Data }) when byte_size(Data) >= Length ->
+	{ deliver, F, Opcode, Mask, Length, Payload, Remainder };
+
+peek({ unpack, F, Opcode, Mask, Length, <<Payload:Length/binary,Remainder/binary>> = Data }) when byte_size(Data) >= Length ->
+	{ deliver, F, Opcode, Mask, Length, unmask(Payload,Mask), Remainder };
+
+peek(Rec) ->	%% pass through anything we can't process yet
+	Rec.
 
 
 %% unframe 
 unframe(_Pid,_Socket,[],<<>>)  ->						%% when we have no more data, reset socket state
 	[];									%% an empty list indicates there was no previous frame.
 unframe(Pid,Socket,[],NewData) when byte_size(NewData) > 2 ->
+	case peek(NewData) of
+		{ length, 
+	
 	{ Finished, Opcode, Length, Mask, Remainder } = peek(NewData),		%% we check to see if we have a valid frame header
 	RemainderLength = iolist_size(Remainder),
 	if (Length > RemainderLength) ->					%% but if we're short bytes for this header

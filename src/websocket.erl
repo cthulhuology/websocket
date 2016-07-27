@@ -160,7 +160,7 @@ handle_info({tcp_closed, Socket }, WebSocket = #websocket{ data = Seen, connecti
 	{ stop, normal, WebSocket };
 
 handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function, uuid = UUID }) ->	
-	io:format("[websocket] Got message ~p~n", [ Data ]),
+io:format("[websocket] Got message ~p~n", [ Data ]),
 	io:format("invoking ~p:~p for ~p~n", [ Module, Function, UUID ]),
 	spawn(Module,Function,[ self(), Data ] ),
 	{ noreply, WebSocket#websocket{ data = [] }};
@@ -189,7 +189,8 @@ handle_info({tcp, Socket, NewData}, WebSocket = #websocket{ handler = Handler, s
 	Handler ! NewData,
 	{ noreply, WebSocket };
 
-handle_info({tcp_closed, _Socket }, WebSocket) ->
+handle_info({tcp_closed, _Socket }, WebSocket = #websocket{ module = Module, function = Function}) ->
+	spawn(Module,Function,[self(),closed]),
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 

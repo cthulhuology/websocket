@@ -44,7 +44,8 @@ handle_call(Msg, _From, State) ->
 
 
 handle_cast( listen, Server = #websocket_server{ port = Port }) ->
-	case gen_tcp:listen(Port,[binary,{packet,0},{reuseaddr,true},{active,true}]) of
+%	case gen_tcp:listen(Port,[binary,{packet,0},{reuseaddr,true},{active,false}]) of
+	case ssl:listen(Port,[{certfile, "cert.pem"}, {keyfile, "key.pem"},{reuseaddr, true}]) of
 		{ ok, Socket } ->
 			accept(Port),
 			{ noreply, Server#websocket_server{ socket = Socket } };

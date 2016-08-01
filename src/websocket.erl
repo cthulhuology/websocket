@@ -64,8 +64,10 @@ bind(WebSocket,Module,Function) ->
 %% gen_server methods
 init({ Listen, Module, Function }) ->
 	%% accept the socket in this process
-	case gen_tcp:accept(Listen) of
+%	case gen_tcp:accept(Listen) of
+	case ssl:transport_accept(Listen) of
 		{ ok, Socket } -> 
+			ok = ssl:accept(Socket),
 			%% if we get a socket, wait for the headers
 			wait_headers(self(), <<"">>),
 			{ ok, #websocket{ 
@@ -83,7 +85,8 @@ init({ Listen, Module, Function }) ->
 	end.
 
 handle_call({ send, Data } , _From, WebSocket = #websocket{ protocol = Protocol, socket = Socket }) ->
-	ok = gen_tcp:send(Socket,Protocol:frame(Data)),
+%%	ok = gen_tcp:send(Socket,Protocol:frame(Data)),
+	ok = ssl:send(Socket,Protocol:frame(Data)),
 	{ reply, ok, WebSocket };
 
 handle_call( uuid, _From, WebSocket = #websocket{ uuid = UUID }) ->
@@ -130,7 +133,8 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	Handshake = Protocol:handshake(Headers,Data),
 	%% find if we have any websocket data already in hand
 	%% send the handshake
-	case gen_tcp:send(Socket,Handshake) of
+%	case gen_tcp:send(Socket,Handshake) of
+	case ssl:send(Socket,Handshake) of
 		ok -> 
 			spawn(Module,Function,[self(),connected]),
 			{ noreply, WebSocket#websocket{ 
@@ -146,6 +150,7 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	end.
 
 handle_info({tcp, _Socket, Data}, WebSocket = #websocket{ connecting = true, data = Seen }) ->
+	io:format("Received request[~p]~n", [ Data ]),
 	case contains_blank_line(<<Seen/binary,Data/binary>>) of
 		yes -> 
 			upgrade(self(),<<Seen/binary,Data/binary>>),
@@ -166,11 +171,13 @@ io:format("[websocket] Got message ~p~n", [ Data ]),
 	{ noreply, WebSocket#websocket{ data = [] }};
 
 handle_info({ send, Data }, WebSocket = #websocket { protocol = Protocol, socket = Socket }) ->
-	ok = gen_tcp:send(Socket,Protocol:frame(Data)),
+%	ok = gen_tcp:send(Socket,Protocol:frame(Data)),
+	ok = ssl:send(Socket,Protocol:frame(Data)),
 	{ noreply, WebSocket };
 
 handle_info({ ping, _Socket }, WebSocket = #websocket{ protocol = Protocol, socket = Socket }) -> 
-	gen_tcp:send(Socket,Protocol:frame(<<"pong">>,10)),	%% send pong
+%	gen_tcp:send(Socket,Protocol:frame(<<"pong">>,10)),	%% send pong
+	ssl:send(Socket,Protocol:frame(<<"pong">>,10)),	%% send pong
 	{ noreply, WebSocket };
 
 handle_info({ pong, _Socket },WebSocket) ->
@@ -202,14 +209,16 @@ handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Sock
 
 terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	spawn(Module,Function,[UUID, closed]),
-	gen_tcp:close(Socket),
+%	gen_tcp:close(Socket),
+	ssl:close(Socket),
 	io:format("Closed socket ~p~n", [ UUID ]),
 	ok;
 
 terminate( Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	io:format("Terminating socket ~p with reason ~p~n", [ UUID, Reason ]),
 	spawn(Module,Function,[UUID, closed]),
-	gen_tcp:close(Socket),
+%	gen_tcp:close(Socket),
+	ssl:close(Socket),
 	ok.
 
 code_change( _Old, WebSocket, _Extra ) ->

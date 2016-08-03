@@ -50,9 +50,9 @@ handle_cast( listen, Server = #websocket_server{ port = Port }) ->
 	case ssl:listen(Port,[
 		binary, 
 		{packet,0},
-		{certfile, Cert}, 
-		{keyfile, Key},
-		{cacertfile, CACert},
+		{certfile, code:priv_dir(websocket) ++ "/" ++ Cert}, 
+		{keyfile, code:priv_dir(websocket) ++ "/" ++ Key},
+		{cacertfile, code:priv_dir(websocket) ++ "/" ++ CACert},
 		{reuseaddr, true},
 		{verify, verify_none}, 
 		{fail_if_no_peer_cert, false},

@@ -6,7 +6,7 @@
 	wait_headers/2, upgrade/2, bind/3  ]).
 -export([ init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3 ]).
 
--record(websocket, { uuid, handler, protocol, headers, socket, data, module, function, connecting }).
+-record(websocket, { uuid, handler, protocol, path, headers, socket, data, module, function, connecting }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Public Methods
@@ -85,12 +85,12 @@ init({ Listen, Module, Function }) ->
 					}};
 				{ error, Reason } ->
 					io:format(" failed to make ssl connection ~p~n", [ Reason ]),
-					{ stop, closed }
+					{ stop, normal }
 			end;
 		{ error, Reason } ->
 			io:format(" got errot ~p~n", [ Reason ]),
 			%% if we don't get a socket, just bail!
-			{ stop, closed }
+			{ stop, normal }
 	end.
 
 handle_call({ send, Data } , _From, WebSocket = #websocket{ protocol = Protocol, socket = Socket }) ->
@@ -106,8 +106,7 @@ handle_call( socket, _From, WebSocket = #websocket{ socket = Socket }) ->
 handle_call( headers, _From, WebSocket = #websocket{ headers = Headers }) ->
 	{ reply, Headers, WebSocket };
 
-handle_call( path, _From, WebSocket = #websocket{ headers = Headers }) ->
-	{ path, Path } = lists:keyfind(path,1,Headers),
+handle_call( path, _From, WebSocket = #websocket{ path = Path }) ->
 	{ reply, Path, WebSocket };
 
 handle_call( method, _From, WebSocket = #websocket{ headers = Headers }) ->
@@ -129,6 +128,7 @@ handle_cast({ wait_headers, Seen }, WebSocket) ->
 handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module = Module, function = Function }) ->
 	%% parse the headers
 	Headers = parse_headers(Data),
+	{ path, Path } = lists:keyfind(path,1,Headers),
 	%% determine which protocol to use, draft00 is now deprecated
 	Protocol =  case proplists:get_value(<<"Sec-WebSocket-Version">>,Headers) of
 		<<"13">> -> 
@@ -142,11 +142,12 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	%% send the handshake
 	case ssl:send(Socket,Handshake) of
 		ok -> 
-			spawn(Module,Function,[self(),connected]),
+			spawn(Module,Function,[self(),Path,connected]),
 			{ noreply, WebSocket#websocket{ 
 				protocol = Protocol,
 				handler = Protocol:handler(self(),Socket),
 				headers = Headers, 
+				path = Path,
 				data = <<>>,
 				connecting = false
 			}};
@@ -168,8 +169,8 @@ handle_info({ssl, _Socket, Data}, WebSocket = #websocket{ connecting = true, dat
 handle_info({ssl_closed, _Socket }, WebSocket = #websocket{ connecting = true }) ->
 	{ stop, normal, WebSocket };
 
-handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function }) ->	
-	spawn(Module,Function,[ self(), Data ] ),
+handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function, path = Path }) ->	
+	spawn(Module,Function,[ self(), Path, Data ] ),
 	{ noreply, WebSocket#websocket{ data = [] }};
 
 handle_info({ send, Data }, WebSocket = #websocket { protocol = Protocol, socket = Socket }) ->
@@ -187,31 +188,27 @@ handle_info({ unknown, Any }, WebSocket) ->
 	io:format("Unknown message ~p~n", [ Any ]),
 	{ stop, unknown_message, WebSocket };
 
-handle_info({ close, _Socket }, WebSocket = #websocket{ }) ->
-	%% after a second stop the websocket
-	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
-	{ noreply, WebSocket };
+handle_info({ close, _Socket }, WebSocket) ->
+	{ stop, normal, WebSocket };
 
 handle_info({ssl, Socket, NewData}, WebSocket = #websocket{ handler = Handler, socket = Socket }) ->
 	Handler ! NewData,
 	{ noreply, WebSocket };
 
-handle_info({ssl_closed, _Socket }, WebSocket = #websocket{ module = Module, function = Function}) ->
-	spawn(Module,Function,[self(),closed]),
-	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
-	{ noreply, WebSocket };
+handle_info({ssl_closed, _Socket }, WebSocket) ->
+	{ stop, normal, WebSocket };
 
 handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Socket, data = Data }) ->
 	NewData = Protocol:handle(self(),Socket,Message,Data),
 	{ noreply, WebSocket#websocket{ data = NewData }}.
 
-terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
-	spawn(Module,Function,[UUID, closed]),
+terminate( normal, #websocket{ socket = Socket, module = Module, function = Function, path = Path }) ->
+	spawn(Module,Function,[self(), Path, closed]),
 	ssl:close(Socket),
 	ok;
 
-terminate( _Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
-	spawn(Module,Function,[UUID, closed]),
+terminate( _Reason, #websocket{ socket = Socket, module = Module, function = Function, path = Path }) ->
+	spawn(Module,Function,[self(), Path, closed]),
 	ssl:close(Socket),
 	ok.
 

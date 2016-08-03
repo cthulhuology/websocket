@@ -2,7 +2,7 @@
 -author({ "David J Goehrig", "dave@dloh.org" }).
 -copyright(<<"© 2012,2013 David J. Goehrig"/utf8>>).
 -behavior(gen_server).
--export([ start/3, send/2, socket/1, headers/1, path/1, stop/1, uuid/1, method/1, protocol/1,
+-export([ server/3, start/3, send/2, socket/1, headers/1, path/1, stop/1, uuid/1, method/1, protocol/1,
 	wait_headers/2, upgrade/2, bind/3  ]).
 -export([ init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3 ]).
 
@@ -11,6 +11,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Public Methods
 %%
+
+% 
+server(Module,Function,Port) ->
+	websocket_sup:server(Module,Function,Port).
 
 %% Starts a websocket by accepting a connection form Listen port
 start(Listen,Module,Function) ->
@@ -64,26 +68,33 @@ bind(WebSocket,Module,Function) ->
 %% gen_server methods
 init({ Listen, Module, Function }) ->
 	%% accept the socket in this process
-	case gen_tcp:accept(Listen) of
+	case ssl:transport_accept(Listen) of
 		{ ok, Socket } -> 
-			%% if we get a socket, wait for the headers
-			wait_headers(self(), <<"">>),
-			{ ok, #websocket{ 
-				uuid = uuid:id(), 
-				socket = Socket, 
-				headers = [], 
-				data = [],
-				module = Module,
-				function = Function,
-				connecting = true
-			}};
-		{ error, closed } ->
+			case ssl:ssl_accept(Socket, 5000) of 
+				ok -> 
+					%% if we get a socket, wait for the headers
+					wait_headers(self(), <<>>),
+					{ ok, #websocket{ 
+						uuid = uuid:id(), 
+						socket = Socket, 
+						headers = [], 
+						data = <<>>,
+						module = Module,
+						function = Function,
+						connecting = true
+					}};
+				{ error, Reason } ->
+					io:format(" failed to make ssl connection ~p~n", [ Reason ]),
+					{ stop, closed }
+			end;
+		{ error, Reason } ->
+			io:format(" got errot ~p~n", [ Reason ]),
 			%% if we don't get a socket, just bail!
 			{ stop, closed }
 	end.
 
 handle_call({ send, Data } , _From, WebSocket = #websocket{ protocol = Protocol, socket = Socket }) ->
-	ok = gen_tcp:send(Socket,Protocol:frame(Data)),
+	ok = ssl:send(Socket,Protocol:frame(Data)),
 	{ reply, ok, WebSocket };
 
 handle_call( uuid, _From, WebSocket = #websocket{ uuid = UUID }) ->
@@ -121,7 +132,6 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	%% determine which protocol to use, draft00 is now deprecated
 	Protocol =  case proplists:get_value(<<"Sec-WebSocket-Version">>,Headers) of
 		<<"13">> -> 
-			io:format("using rfc6455~n"),
 			websocket_rfc6455;
 		_ ->
 			io:format("Protocol not supported")
@@ -130,14 +140,14 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 	Handshake = Protocol:handshake(Headers,Data),
 	%% find if we have any websocket data already in hand
 	%% send the handshake
-	case gen_tcp:send(Socket,Handshake) of
+	case ssl:send(Socket,Handshake) of
 		ok -> 
 			spawn(Module,Function,[self(),connected]),
 			{ noreply, WebSocket#websocket{ 
 				protocol = Protocol,
 				handler = Protocol:handler(self(),Socket),
 				headers = Headers, 
-				data = [],
+				data = <<>>,
 				connecting = false
 			}};
 		{ error, Reason } ->	
@@ -145,7 +155,7 @@ handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module =
 			{ stop, handshake_failed, WebSocket }
 	end.
 
-handle_info({tcp, _Socket, Data}, WebSocket = #websocket{ connecting = true, data = Seen }) ->
+handle_info({ssl, _Socket, Data}, WebSocket = #websocket{ connecting = true, data = Seen }) ->
 	case contains_blank_line(<<Seen/binary,Data/binary>>) of
 		yes -> 
 			upgrade(self(),<<Seen/binary,Data/binary>>),
@@ -155,22 +165,19 @@ handle_info({tcp, _Socket, Data}, WebSocket = #websocket{ connecting = true, dat
 			{ noreply, WebSocket }
 	end;	
 
-handle_info({tcp_closed, Socket }, WebSocket = #websocket{ data = Seen, connecting = true }) ->
-	io:format("Closed socket ~p with data ~p ~n", [ Socket, Seen ]),
+handle_info({ssl_closed, _Socket }, WebSocket = #websocket{ connecting = true }) ->
 	{ stop, normal, WebSocket };
 
-handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function, uuid = UUID }) ->	
-io:format("[websocket] Got message ~p~n", [ Data ]),
-	io:format("invoking ~p:~p for ~p~n", [ Module, Function, UUID ]),
+handle_info({ message, Data }, WebSocket = #websocket{ module = Module, function = Function }) ->	
 	spawn(Module,Function,[ self(), Data ] ),
 	{ noreply, WebSocket#websocket{ data = [] }};
 
 handle_info({ send, Data }, WebSocket = #websocket { protocol = Protocol, socket = Socket }) ->
-	ok = gen_tcp:send(Socket,Protocol:frame(Data)),
+	ok = ssl:send(Socket,Protocol:frame(Data)),
 	{ noreply, WebSocket };
 
 handle_info({ ping, _Socket }, WebSocket = #websocket{ protocol = Protocol, socket = Socket }) -> 
-	gen_tcp:send(Socket,Protocol:frame(<<"pong">>,10)),	%% send pong
+	ssl:send(Socket,Protocol:frame(<<"pong">>,10)),	%% send pong
 	{ noreply, WebSocket };
 
 handle_info({ pong, _Socket },WebSocket) ->
@@ -185,31 +192,27 @@ handle_info({ close, _Socket }, WebSocket = #websocket{ }) ->
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 
-handle_info({tcp, Socket, NewData}, WebSocket = #websocket{ handler = Handler, socket = Socket }) ->
+handle_info({ssl, Socket, NewData}, WebSocket = #websocket{ handler = Handler, socket = Socket }) ->
 	Handler ! NewData,
 	{ noreply, WebSocket };
 
-handle_info({tcp_closed, _Socket }, WebSocket = #websocket{ module = Module, function = Function}) ->
+handle_info({ssl_closed, _Socket }, WebSocket = #websocket{ module = Module, function = Function}) ->
 	spawn(Module,Function,[self(),closed]),
 	timer:apply_after(1000, ?MODULE, stop, [ self() ]),
 	{ noreply, WebSocket };
 
 handle_info( Message, WebSocket = #websocket{ protocol = Protocol, socket = Socket, data = Data }) ->
-	io:format("[websocket] message  ~p~n", [ Message ]),
 	NewData = Protocol:handle(self(),Socket,Message,Data),
-	io:format("[websocket] new data ~p~n", [ NewData ]),
 	{ noreply, WebSocket#websocket{ data = NewData }}.
 
 terminate( normal, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	spawn(Module,Function,[UUID, closed]),
-	gen_tcp:close(Socket),
-	io:format("Closed socket ~p~n", [ UUID ]),
+	ssl:close(Socket),
 	ok;
 
-terminate( Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
-	io:format("Terminating socket ~p with reason ~p~n", [ UUID, Reason ]),
+terminate( _Reason, #websocket{ uuid = UUID, socket = Socket, module = Module, function = Function }) ->
 	spawn(Module,Function,[UUID, closed]),
-	gen_tcp:close(Socket),
+	ssl:close(Socket),
 	ok.
 
 code_change( _Old, WebSocket, _Extra ) ->

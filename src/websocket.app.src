@@ -1,12 +1,29 @@
-{application, websocket,
- [
-  {description, ""},
-  {vsn, "1"},
-  {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib
-                 ]},
-  {mod, { websocket_app, []}},
-  {env, []}
- ]}.
+{application, websocket, [
+	{description, "Websocket server application"},
+	{vsn, "1"},
+	{registered, []},
+	{applications, [
+		kernel,
+		stdlib,
+		crypto,
+		asn1,
+		public_key,
+		ssl
+	]},
+	{ modules, [
+		websocket_app,
+		websocket_sup,
+		websocket,
+		websocket_rfc6455,
+		websocket_server,
+		websocket_client,
+		websocket_logger,
+		websocket_url
+	]},
+	{mod, { websocket_app, []}},
+	{env, [
+		{ cacertfile, "cacert.pem" },
+		{ certfile, "cert.pem" },
+		{ keyfile, "key.pem" }
+	]}
+]}.

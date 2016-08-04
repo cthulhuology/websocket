@@ -128,6 +128,7 @@ handle_cast({ wait_headers, Seen }, WebSocket) ->
 handle_cast({ upgrade, Data }, WebSocket = #websocket{ socket = Socket, module = Module, function = Function }) ->
 	%% parse the headers
 	Headers = parse_headers(Data),
+	io:format("Headers ~p~n", [ Headers ]),
 	{ path, Path } = lists:keyfind(path,1,Headers),
 	%% determine which protocol to use, draft00 is now deprecated
 	Protocol =  case proplists:get_value(<<"Sec-WebSocket-Version">>,Headers) of

@@ -3,7 +3,7 @@
 -copyright(<<"© 2012,2013 David J. Goehrig"/utf8>>).
 -behavior(gen_server).
 -export([ server/3, start/3, send/2, socket/1, headers/1, path/1, stop/1, uuid/1, method/1, protocol/1,
-	wait_headers/2, upgrade/2, bind/3  ]).
+	subprotocol/1, wait_headers/2, upgrade/2, bind/3  ]).
 -export([ init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3 ]).
 
 -record(websocket, { uuid, handler, protocol, path, headers, socket, data, module, function, connecting }).
@@ -55,6 +55,10 @@ method(WebSocket) ->
 %% Returns the protocol of the WebSocket
 protocol(WebSocket) ->
 	gen_server:call(WebSocket,protocol).
+
+%% Returns the subprotocol of the WebSocket
+subprotocol(WebSocket) ->
+	gen_server:call(WebSocket,subprotocol).
 
 %% Stops the WebSocket
 stop(WebSocket) ->
@@ -114,7 +118,11 @@ handle_call( method, _From, WebSocket = #websocket{ headers = Headers }) ->
 	{ reply, Method, WebSocket };
 
 handle_call( protocol, _From, WebSocket = #websocket{ protocol = Protocol }) ->
-	{ reply, Protocol, WebSocket }.
+	{ reply, Protocol, WebSocket };
+
+handle_call( subprotocol, _From, WebSocket = #websocket{ headers = Headers }) ->
+	SubProtocol =  proplists:get_value(<<"Sec-WebSocket-Protocol">>,Headers),
+	{ reply, SubProtocol, WebSocket }. 
 
 handle_cast({ bind, Module, Function }, WebSocket) ->
 	{ noreply, WebSocket#websocket{ module = Module, function = Function }};

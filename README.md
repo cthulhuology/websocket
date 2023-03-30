@@ -7,12 +7,6 @@ This is a websocket library for Erlang suitable for adding WebSocket support to 
 Getting Started:
 ----------------
 
-In your rebar.config file in the deps section add the following line:	
-
-	{ deps, [	
-		{websocket, ".*", {git, "git:github.com/cthulhuology/websocket.git","master" }}
-	}}.
-
 You can then create a series of websocket servers by adding entries in your sys.config file:
 
 	{ websocket, [ 

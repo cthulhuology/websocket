@@ -74,13 +74,13 @@ init({ Listen, Module, Function }) ->
 	%% accept the socket in this process
 	case ssl:transport_accept(Listen) of
 		{ ok, Socket } -> 
-			case ssl:ssl_accept(Socket, 5000) of 
-				ok -> 
+			case ssl:ssl_handshake(Socket, 5000) of 
+				{ ok, SSLSocket } -> 
 					%% if we get a socket, wait for the headers
 					wait_headers(self(), <<>>),
 					{ ok, #websocket{ 
 						uuid = uuid:id(), 
-						socket = Socket, 
+						socket = SSLSocket, 
 						headers = [], 
 						data = <<>>,
 						module = Module,
